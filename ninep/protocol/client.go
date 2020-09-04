@@ -20,7 +20,8 @@ import (
 // client are unique), an array of MaxTag-2 RPC structs, a ReadWriteCloser
 // for IO, and two channels for a server goroutine: one down which RPCalls are
 // pushed and another from which RPCReplys return.
-// Once a client is marked Dead all further requests to it will fail.
+// A client is DeadCount if its DeadCount is > 0.
+// Once a client is marked DeadCount all further requests to it will fail.
 // The ToNet/FromNet are separate so we can use io.Pipe for testing.
 type Client struct {
 	Tags       chan Tag
@@ -31,7 +32,7 @@ type Client struct {
 	FromClient chan *RPCCall
 	FromServer chan *RPCReply
 	Msize      uint32
-	Dead       bool
+	DeadCount  uint64
 	Trace      Tracer
 }
 
@@ -79,7 +80,7 @@ func (c *Client) readNetPackets() {
 		if c.Trace != nil {
 			c.Trace("c.FromNet is nil, marking dead")
 		}
-		c.Dead = true
+		atomic.AddUint64(&c.DeadCount, 1)
 		return
 	}
 	defer c.FromNet.Close()
@@ -87,7 +88,7 @@ func (c *Client) readNetPackets() {
 	if c.Trace != nil {
 		c.Trace("Starting readNetPackets")
 	}
-	for !c.Dead {
+	for atomic.LoadUint64(&c.DeadCount) == 0 {
 		l := make([]byte, 7)
 		if c.Trace != nil {
 			c.Trace("Before read")
@@ -95,7 +96,7 @@ func (c *Client) readNetPackets() {
 
 		if n, err := c.FromNet.Read(l); err != nil || n < 7 {
 			log.Printf("readNetPackets: short read: %v", err)
-			c.Dead = true
+			atomic.AddUint64(&c.DeadCount, 1)
 			return
 		}
 		if c.Trace != nil {
@@ -106,7 +107,7 @@ func (c *Client) readNetPackets() {
 		r := io.LimitReader(c.FromNet, s-7)
 		if _, err := io.Copy(b, r); err != nil {
 			log.Printf("readNetPackets: short read: %v", err)
-			c.Dead = true
+			atomic.AddUint64(&c.DeadCount, 1)
 			return
 		}
 		if c.Trace != nil {
@@ -138,7 +139,7 @@ func (c *Client) IO() {
 				c.Trace("Write %v to ToNet", r.b)
 			}
 			if _, err := c.ToNet.Write(r.b); err != nil {
-				c.Dead = true
+				atomic.AddUint64(&c.DeadCount, 1)
 				log.Fatalf("Write to server: %v", err)
 				return
 			}
@@ -160,16 +161,18 @@ func (c *Client) IO() {
 		if int(t-1) >= len(c.RPC) {
 			panic(fmt.Sprintf("tag %d >= len(c.RPC) %d", t, len(c.RPC)))
 		}
-		c.Trace("RPC %v ", c.RPC[t-1])
+		if c.Trace != nil {
+			c.Trace("RPC #%d: %v ", t-1, c.RPC[t-1])
+		}
 		rrr := c.RPC[t-1]
-		c.Trace("rrr %v ", rrr)
+		if c.Trace != nil {
+			c.Trace("rrr %v ", rrr)
+		}
 		rrr.Reply <- r.b
 		c.Tags <- t
 	}
 }
 
 func (c *Client) String() string {
-	z := map[bool]string{false: "Alive", true: "Dead"}
-	return fmt.Sprintf("%v tags available, Msize %v, %v FromNet %v ToNet %v", len(c.Tags), c.Msize, z[c.Dead],
-		c.FromNet, c.ToNet)
+	return fmt.Sprintf("%v tags available, Msize %v, Deathcount %v", len(c.Tags), c.Msize, atomic.LoadUint64(&c.DeadCount))
 }

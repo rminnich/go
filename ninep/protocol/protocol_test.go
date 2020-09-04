@@ -321,7 +321,7 @@ func TestTManyRPCs(t *testing.T) {
 	},
 		func(c *Client) error {
 			c.Msize = 8192
-			c.Trace = print // t.Logf
+			//c.Trace = print // t.Logf
 			return nil
 		})
 	if err != nil {
@@ -332,7 +332,7 @@ func TestTManyRPCs(t *testing.T) {
 	s, err := NewNetListener(
 		func() NineServer { return newEcho() },
 		func(l *NetListener) error {
-			l.Trace = print
+			//l.Trace = print
 			return nil
 		})
 	if err != nil {
@@ -360,7 +360,7 @@ func TestTMessages(t *testing.T) {
 	},
 		func(c *Client) error {
 			c.Msize = 8192
-			c.Trace = print // t.Logf
+			//c.Trace = print // t.Logf
 			return nil
 		})
 	if err != nil {
@@ -371,7 +371,7 @@ func TestTMessages(t *testing.T) {
 	s, err := NewNetListener(
 		func() NineServer { return newEcho() },
 		func(l *NetListener) error {
-			l.Trace = print // t.Logf
+			//l.Trace = print // t.Logf
 			return nil
 		})
 
